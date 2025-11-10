@@ -1,0 +1,12 @@
+lista_1 = ["banana", "manzana"]
+lista_2 = ["banana", "manzana"]
+lista_3 = lista_1
+identidad = lista_1 is lista_2
+print(identidad) #En lista_2 asignamos el mismo valor que en la lista_1 pero no son la misma lista
+identidad = lista_1 is lista_3
+print(identidad)#En lista_3 asignamos la lista_1 entonces son la misma lista
+
+lista_1.append("frutilla")
+print("lista_1", lista_1)
+print("lista_2", lista_2)
+print("lista_3", lista_3)
