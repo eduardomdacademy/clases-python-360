@@ -7,10 +7,13 @@ while True:
     if comida_minusculas == "salir":
         break
     cantidad += 1
-    comidas_favoritas = comidas_favoritas + ", " + comida
+
+    if cantidad == 1: #es la primera vez
+        comidas_favoritas = comidas_favoritas + comida
+    else:
+        comidas_favoritas = comidas_favoritas + ", " + comida
     
 
 mensaje_cantidad = "Se ingresaron " + str(cantidad) + " comidas"
 print(mensaje_cantidad)
 print(comidas_favoritas)
-#arroz, fideo, sopa
