@@ -15,7 +15,7 @@ def leer_csv(nombre_archivo):
             estudiantes.append((nombre, asistencias))
     return estudiantes
 
-# 🚩 Función que el alumno debe implementar
+#Función que el alumno debe implementar
 def calcular_asistencia(asistencias):
     """
     Recibe una lista de 0s y 1s.
