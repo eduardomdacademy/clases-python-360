@@ -16,12 +16,12 @@ def leer_csv(nombre_archivo):
     return estudiantes
 
 #Función que el alumno debe implementar
-def calcular_asistencia(asistencias):
-    """
-    Recibe una lista de 0s y 1s.
-    Debe devolver True si el estudiante alcanzó al menos el 70% de asistencia,
-    False en caso contrario.
-    """
+def calcular_asistencia(asistencias):    
+    # Recibe una lista de 0s y 1s.
+    #1 significa que el alumno estuvo presente esa clase
+    #0 significa que el alumno estuvo ausente esa clase
+    # Debe devolver True si el estudiante alcanzó al menos el 70% de asistencia,
+    # False en caso contrario.   
     pass  # reemplazar esta linea
 
 #OBSERVACION
