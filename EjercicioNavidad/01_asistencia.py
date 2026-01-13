@@ -22,8 +22,18 @@ def calcular_asistencia(asistencias):
     #0 significa que el alumno estuvo ausente esa clase
     # Debe devolver True si el estudiante alcanzó al menos el 70% de asistencia,
     # False en caso contrario.   
-    pass  # reemplazar esta linea
-
+    total_clases = len(asistencias)
+    cantidad_de_presentes = 0
+    for asistencia in asistencias:
+        if asistencia == 1:
+            cantidad_de_presentes += 1
+    porcentaje = (cantidad_de_presentes/total_clases) *100
+    print(porcentaje)
+    if porcentaje >= 70:
+        return True
+    else:
+        return False
+    
 #OBSERVACION
 #esta ruta al archivo prodria hacer falta ajustar
 #se puede hacer segundo click sobre el archivo en el explorador de la izquierda y seleccionar la opcion "Copiar ruta de acceso relativa"
