@@ -1,0 +1,8 @@
+numeros = [3,4,0,1,2,3,0,1]
+
+for numero in numeros:
+    try:
+        print(10/numero)
+    except:
+        print("ocurrio un error")
+        print(0)
