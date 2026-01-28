@@ -118,12 +118,12 @@ def jugar():
         [" ", " ", " "],
         [" ", " ", " "]        
     ]
+   
     jugador = "X"
 
     while True:
         imprimir_tablero(tablero)
         fila, col = pedir_jugada(jugador)
-
         if tablero[fila][col] == " ":
             tablero[fila][col] = jugador
         else:
