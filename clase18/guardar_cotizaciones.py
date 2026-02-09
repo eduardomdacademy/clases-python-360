@@ -15,6 +15,7 @@ def guardar_resultados(cotizaciones, path_archivo_resultado):
         workbook.create_sheet(moneda)
         sheet = workbook[moneda]
         sheet.cell(1,1,"Fecha")
+        
         sheet.cell(1,2,"Compra")
         sheet.cell(1,3,"Venta")        
         fila = 2
