@@ -6,14 +6,15 @@ from cotizacion import Cotizacion
 
 def leer_carpeta(carpeta):
     archivos = os.listdir(carpeta)
-    resultado = []
+
+    resultados = []
     for archivo in archivos:
         if archivo[0] == "~":
             continue
         path = Path(carpeta) / archivo
         print(path)
         lista_cotizacion = leer_excel(path)
-        resultado = resultado + lista_cotizacion
-    return resultado
+        resultados = resultados + lista_cotizacion
+    return resultados
 
 

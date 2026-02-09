@@ -3,7 +3,7 @@ from cotizacion import Cotizacion
 
 def guardar_resultados(cotizaciones, path_archivo_resultado):
     cotizaciones.sort()
-    
+    print("hola mundo")
     workbook = openpyxl.Workbook()
     monedas_set = {cotizaciones[0].moneda}
     for cotizacion in cotizaciones:
