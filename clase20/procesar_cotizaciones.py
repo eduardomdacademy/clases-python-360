@@ -1,199 +1,395 @@
-import pandas as pd
 import openpyxl
+from openpyxl.drawing.image import Image as XlImage
 from pathlib import Path
-from datetime import datetime
+from datetime import date, datetime, timedelta
+from io import BytesIO
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
-def extraer_monedas(df_raw, fila_monedas, fila_tipo):
+MESES = {
+    'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4,
+    'mayo': 5, 'junio': 6, 'julio': 7, 'agosto': 8,
+    'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12,
+}
+
+
+def parsear_mes_anio(mes_anio):
+    """Convierte 'Agosto/2025' en (8, 2025)."""
+    partes = mes_anio.replace("/", " ").split()
+    nombre_mes = partes[0].strip().lower()
+    anio = int(partes[1].strip())
+    return MESES[nombre_mes], anio
+
+
+def es_valido(valor):
+    """Retorna True si el valor no es None, vacío ni '-'."""
+    return valor is not None and valor != '' and valor != '-'
+
+
+def extraer_monedas(ws, fila_monedas, fila_tipo, max_col):
     """
     Extrae las monedas y sus columnas de compra/venta de una tabla.
 
     Args:
-        df_raw: DataFrame sin procesar
-        fila_monedas: Índice de la fila que contiene los nombres de monedas
-        fila_tipo: Índice de la fila que contiene "Compra"/"Venta"
+        ws: Hoja de trabajo de openpyxl
+        fila_monedas: Número de fila que contiene los nombres de monedas (1-indexed)
+        fila_tipo: Número de fila que contiene "Compra"/"Venta" (1-indexed)
+        max_col: Número máximo de columnas a recorrer
 
     Returns:
         Diccionario con {nombre_moneda: {'compra': col_idx, 'venta': col_idx}}
     """
     monedas = {}
-    for col_idx in range(1, len(df_raw.columns)):
-        moneda = df_raw.iloc[fila_monedas, col_idx]
-        tipo = df_raw.iloc[fila_tipo, col_idx]
+    for col_idx in range(2, max_col + 1):
+        moneda = ws.cell(row=fila_monedas, column=col_idx).value
+        tipo = ws.cell(row=fila_tipo, column=col_idx).value
 
-        if pd.notna(moneda) and moneda != '' and moneda != '-':
-            # Nueva moneda encontrada
+        if es_valido(moneda):
             moneda_nombre = str(moneda).strip()
-            # Filtrar monedas inválidas
-            if moneda_nombre not in monedas and moneda_nombre != '-':
+            if moneda_nombre not in monedas:
                 monedas[moneda_nombre] = {'compra': None, 'venta': None}
 
-            # Determinar si es columna de compra o venta
-            if pd.notna(tipo):
+            if tipo is not None:
                 tipo_str = str(tipo).strip().lower()
                 if 'compra' in tipo_str:
                     monedas[moneda_nombre]['compra'] = col_idx
                 elif 'venta' in tipo_str:
                     monedas[moneda_nombre]['venta'] = col_idx
-        elif pd.notna(tipo):
-            # Es una columna de compra/venta de la moneda anterior
+        elif tipo is not None:
             tipo_str = str(tipo).strip().lower()
             if monedas and 'venta' in tipo_str:
-                # Asignar a la última moneda
                 ultima_moneda = list(monedas.keys())[-1]
                 monedas[ultima_moneda]['venta'] = col_idx
 
     return monedas
 
-def procesar_datos_moneda(df_raw, fila_datos_inicio, cols):
+
+def procesar_datos_moneda(ws, fila_datos_inicio, cols, mes, anio):
     """
     Procesa los datos de cotización de una moneda.
 
     Args:
-        df_raw: DataFrame sin procesar
-        fila_datos_inicio: Índice de la primera fila con datos
+        ws: Hoja de trabajo de openpyxl
+        fila_datos_inicio: Número de fila de inicio de datos (1-indexed)
         cols: Diccionario con {'compra': col_idx, 'venta': col_idx}
+        mes: Número de mes (1-12)
+        anio: Año (ej. 2025)
 
     Returns:
-        Lista de diccionarios con {Día, Compra, Venta}
+        Lista de diccionarios con {Fecha, Compra, Venta}
     """
     datos_moneda = []
+    fila_idx = fila_datos_inicio
 
-    for fila_idx in range(fila_datos_inicio, len(df_raw)):
-        dia = df_raw.iloc[fila_idx, 0]
+    while True:
+        dia = ws.cell(row=fila_idx, column=1).value
 
-        # Si no hay día, terminar
-        if pd.isna(dia):
+        if dia is None:
             break
 
-        # Verificar si el día es un número válido
         try:
             dia_num = int(dia)
         except (ValueError, TypeError):
-            # No es un número válido (puede ser "Promedio", etc.), continuar
+            fila_idx += 1
             continue
 
-        compra = df_raw.iloc[fila_idx, cols['compra']] if cols['compra'] is not None else None
-        venta = df_raw.iloc[fila_idx, cols['venta']] if cols['venta'] is not None else None
+        compra = ws.cell(row=fila_idx, column=cols['compra']).value if cols['compra'] else None
+        venta = ws.cell(row=fila_idx, column=cols['venta']).value if cols['venta'] else None
 
-        # Solo agregar si hay al menos un valor válido
-        if not (pd.isna(compra) and pd.isna(venta)):
-            # Convertir '-' a NaN
+        if compra is not None or venta is not None:
             if compra == '-':
                 compra = None
             if venta == '-':
                 venta = None
 
             datos_moneda.append({
-                'Día': dia_num,
+                'Fecha': date(anio, mes, dia_num),
                 'Compra': compra,
-                'Venta': venta
+                'Venta': venta,
             })
+
+        fila_idx += 1
 
     return datos_moneda
 
-def procesar_tabla(df_raw, fila_monedas, fila_tipo, fila_datos_inicio):
+
+def procesar_tabla(ws, fila_monedas, fila_tipo, fila_datos_inicio, mes, anio):
     """
     Procesa una tabla completa de cotizaciones.
 
     Args:
-        df_raw: DataFrame sin procesar
-        fila_monedas: Índice de la fila con nombres de monedas
-        fila_tipo: Índice de la fila con "Compra"/"Venta"
-        fila_datos_inicio: Índice de la primera fila con datos
+        ws: Hoja de trabajo de openpyxl
+        fila_monedas: Fila con nombres de monedas (1-indexed)
+        fila_tipo: Fila con "Compra"/"Venta" (1-indexed)
+        fila_datos_inicio: Primera fila con datos (1-indexed)
+        mes: Número de mes (1-12)
+        anio: Año (ej. 2025)
 
     Returns:
         Diccionario con {nombre_moneda: [datos]}
     """
-    # Extraer monedas y sus columnas
-    monedas = extraer_monedas(df_raw, fila_monedas, fila_tipo)
+    monedas = extraer_monedas(ws, fila_monedas, fila_tipo, ws.max_column)
 
-    # Procesar datos de cada moneda
     resultado = {}
     for moneda, cols in monedas.items():
-        datos = procesar_datos_moneda(df_raw, fila_datos_inicio, cols)
-        if datos:  # Solo agregar si hay datos
+        datos = procesar_datos_moneda(ws, fila_datos_inicio, cols, mes, anio)
+        if datos:
             resultado[moneda] = datos
 
     return resultado
 
+
+def procesar_archivo(archivo):
+    """
+    Procesa un archivo Excel de cotizaciones y retorna un diccionario
+    con {nombre_moneda: [datos]} para todas las monedas encontradas.
+    """
+    print(f"\nLeyendo archivo: {archivo.name}")
+
+    wb = openpyxl.load_workbook(archivo, data_only=True)
+    ws = wb["Cotizaciones Diarias"]
+    print(f"  Filas: {ws.max_row}, Columnas: {ws.max_column}")
+
+    # Buscar el mes/año en las primeras filas
+    mes_anio = None
+    for fila in range(1, min(11, ws.max_row + 1)):
+        for col in range(1, ws.max_column + 1):
+            val = ws.cell(row=fila, column=col).value
+            if val is not None and isinstance(val, str) and "/" in val:
+                mes_anio = val
+                print(f"  Mes/Año encontrado: {mes_anio}")
+                break
+        if mes_anio:
+            break
+
+    if not mes_anio:
+        print(f"  Advertencia: No se encontró mes/año en {archivo.name}, saltando.")
+        wb.close()
+        return {}
+
+    # Configuración de las tres tablas (filas 1-indexed para openpyxl)
+    tablas = [
+        {'fila_monedas': 10, 'fila_tipo': 11, 'fila_datos_inicio': 12, 'nombre': 'Primera tabla'},
+        {'fila_monedas': 60, 'fila_tipo': 61, 'fila_datos_inicio': 62, 'nombre': 'Segunda tabla'},
+        {'fila_monedas': 109, 'fila_tipo': 110, 'fila_datos_inicio': 111, 'nombre': 'Tercera tabla'},
+    ]
+
+    mes, anio = parsear_mes_anio(mes_anio)
+
+    monedas_archivo = {}
+    for config in tablas:
+        print(f"  Procesando {config['nombre']}...")
+        monedas_tabla = procesar_tabla(
+            ws,
+            config['fila_monedas'],
+            config['fila_tipo'],
+            config['fila_datos_inicio'],
+            mes,
+            anio,
+        )
+
+        for moneda, datos in monedas_tabla.items():
+            if moneda in monedas_archivo:
+                monedas_archivo[moneda].extend(datos)
+            else:
+                monedas_archivo[moneda] = datos
+
+    wb.close()
+    return monedas_archivo
+
+
+def suavizado_holt(valores, alfa=0.3, beta=0.1, dias_proyeccion=22):
+    """
+    Suavizado Exponencial Doble (Holt) para proyectar valores futuros.
+
+    Args:
+        valores: Lista de valores numéricos históricos.
+        alfa: Factor de suavizado del nivel (0-1).
+        beta: Factor de suavizado de la tendencia (0-1).
+        dias_proyeccion: Cantidad de días a proyectar.
+
+    Returns:
+        Lista con los valores proyectados.
+    """
+    if len(valores) < 2:
+        return []
+
+    # Inicializar nivel y tendencia
+    nivel = valores[0]
+    tendencia = valores[1] - valores[0]
+
+    # Recorrer datos históricos para ajustar nivel y tendencia
+    for valor in valores[1:]:
+        nivel_anterior = nivel
+        nivel = alfa * valor + (1 - alfa) * (nivel_anterior + tendencia)
+        tendencia = beta * (nivel - nivel_anterior) + (1 - beta) * tendencia
+
+    # Generar proyección
+    proyeccion = []
+    for i in range(1, dias_proyeccion + 1):
+        proyeccion.append(nivel + i * tendencia)
+
+    return proyeccion
+
+
+def generar_fechas_futuras(ultima_fecha, cantidad):
+    """
+    Genera fechas futuras hábiles (lunes a viernes) a partir de una fecha.
+
+    Args:
+        ultima_fecha: Última fecha de los datos reales.
+        cantidad: Cantidad de días hábiles a generar.
+
+    Returns:
+        Lista de objetos date.
+    """
+    fechas = []
+    fecha_actual = ultima_fecha
+    while len(fechas) < cantidad:
+        fecha_actual += timedelta(days=1)
+        # 0=lunes, 5=sábado, 6=domingo
+        if fecha_actual.weekday() < 5:
+            fechas.append(fecha_actual)
+    return fechas
+
+
+def generar_grafico(datos_moneda, nombre_moneda):
+    """
+    Genera un gráfico de línea con las cotizaciones de compra y venta.
+
+    Returns:
+        BytesIO con la imagen PNG del gráfico.
+    """
+    # Filtrar puntos con datos válidos para que la línea sea continua
+    fechas_compra = [r['Fecha'] for r in datos_moneda if r['Compra'] is not None]
+    compras = [r['Compra'] for r in datos_moneda if r['Compra'] is not None]
+    fechas_venta = [r['Fecha'] for r in datos_moneda if r['Venta'] is not None]
+    ventas = [r['Venta'] for r in datos_moneda if r['Venta'] is not None]
+
+    fig, ax = plt.subplots(figsize=(14, 5))
+
+    ax.plot(fechas_compra, compras, label='Compra', color='#2196F3', linewidth=1.5)
+    ax.plot(fechas_venta, ventas, label='Venta', color='#F44336', linewidth=1.5)
+
+    # Proyección con Suavizado Exponencial Doble (Holt)
+    dias_proyeccion = 22
+    ultima_fecha = max(fechas_compra[-1:] + fechas_venta[-1:])
+    fechas_futuras = generar_fechas_futuras(ultima_fecha, dias_proyeccion)
+
+    if compras:
+        proy_compra = suavizado_holt(compras, dias_proyeccion=dias_proyeccion)
+        ax.plot(
+            [fechas_compra[-1]] + fechas_futuras,
+            [compras[-1]] + proy_compra,
+            label='Compra (estimado)', color='#2196F3', linewidth=1.5, linestyle='--',
+        )
+
+    if ventas:
+        proy_venta = suavizado_holt(ventas, dias_proyeccion=dias_proyeccion)
+        ax.plot(
+            [fechas_venta[-1]] + fechas_futuras,
+            [ventas[-1]] + proy_venta,
+            label='Venta (estimado)', color='#F44336', linewidth=1.5, linestyle='--',
+        )
+
+    # Línea vertical separando datos reales de la proyección
+    ax.axvline(x=ultima_fecha, color='gray', linestyle=':', linewidth=1, alpha=0.7)
+
+    ax.set_title(f'Cotización {nombre_moneda} - Compra / Venta', fontsize=14)
+    ax.set_xlabel('Fecha')
+    ax.set_ylabel('Cotización (Gs.)')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    ax.xaxis.set_major_locator(mdates.MonthLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+    fig.autofmt_xdate(rotation=45)
+
+    fig.tight_layout()
+
+    buf = BytesIO()
+    fig.savefig(buf, format='png', dpi=120)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
 def procesar_cotizaciones():
     """
-    Lee el archivo Excel con cotizaciones diarias y genera un nuevo Excel
+    Lee todos los archivos Excel de cotizaciones en la carpeta y genera un nuevo Excel
     con una hoja por cada moneda, mostrando la cotización de compra/venta por día.
     """
 
-    # Ruta del archivo de entrada
-    carpeta_cotizacion = Path("cotizacion")
-    archivo_entrada = carpeta_cotizacion / "Cotizaciones - Agosto 2025.xlsx"
+    carpeta_cotizacion = Path("clase20") / "cotizacion"
 
-    # Verificar que el archivo existe
-    if not archivo_entrada.exists():
-        print(f"Error: No se encontró el archivo {archivo_entrada}")
+    # Buscar todos los archivos Excel que no sean temporales (~$)
+    archivos = sorted([
+        f for f in carpeta_cotizacion.glob("Cotizaciones - *.xlsx")
+        if not f.name.startswith("~$")
+    ])
+
+    if not archivos:
+        print(f"Error: No se encontraron archivos de cotizaciones en {carpeta_cotizacion}")
         return
 
-    print(f"Leyendo archivo: {archivo_entrada}")
+    print(f"Se encontraron {len(archivos)} archivo(s) de cotizaciones:")
+    for a in archivos:
+        print(f"  - {a.name}")
 
-    # Leer el archivo Excel sin procesar
     try:
-        df_raw = pd.read_excel(archivo_entrada, sheet_name="Cotizaciones Diarias", header=None)
-        print(f"\nDatos leídos correctamente. Shape: {df_raw.shape}")
-
-        # Buscar el mes/año en las primeras filas (típicamente fila 7, columna 1)
-        mes_anio = None
-        for idx in range(min(10, len(df_raw))):
-            for col in df_raw.columns:
-                val = df_raw.iloc[idx, col]
-                if pd.notna(val) and isinstance(val, str) and "/" in val:
-                    mes_anio = val
-                    print(f"Mes/Año encontrado: {mes_anio}")
-                    break
-            if mes_anio:
-                break
-
-        # Configuración de las tres tablas
-        tablas = [
-            {'fila_monedas': 9, 'fila_tipo': 10, 'fila_datos_inicio': 11, 'nombre': 'Primera tabla'},
-            {'fila_monedas': 59, 'fila_tipo': 60, 'fila_datos_inicio': 61, 'nombre': 'Segunda tabla'},
-            {'fila_monedas': 108, 'fila_tipo': 109, 'fila_datos_inicio': 110, 'nombre': 'Tercera tabla'}
-        ]
-
-        # Procesar ambas tablas y consolidar todas las monedas
         todas_monedas = {}
-        for config in tablas:
-            print(f"\nProcesando {config['nombre']}...")
-            monedas_tabla = procesar_tabla(
-                df_raw,
-                config['fila_monedas'],
-                config['fila_tipo'],
-                config['fila_datos_inicio']
-            )
 
-            # Agregar monedas al diccionario consolidado
-            for moneda, datos in monedas_tabla.items():
+        for archivo in archivos:
+            monedas_archivo = procesar_archivo(archivo)
+
+            for moneda, datos in monedas_archivo.items():
                 if moneda in todas_monedas:
-                    # Si la moneda ya existe, agregar sufijo
-                    print(f"  Advertencia: Moneda '{moneda}' duplicada, agregando sufijo")
-                    moneda = f"{moneda}_2"
+                    todas_monedas[moneda].extend(datos)
+                else:
+                    todas_monedas[moneda] = datos
 
-                todas_monedas[moneda] = datos
+        # Ordenar los datos de cada moneda por fecha
+        for moneda in todas_monedas:
+            todas_monedas[moneda].sort(key=lambda r: r['Fecha'])
 
         print(f"\nTotal de monedas encontradas: {len(todas_monedas)}")
         print(f"Monedas: {list(todas_monedas.keys())}")
 
         # Crear archivo Excel de salida
-        archivo_salida = carpeta_cotizacion / f"Cotizaciones_Por_Moneda_{mes_anio.replace('/', '_')}.xlsx"
+        carpeta_resultados = carpeta_cotizacion.parent / "resultados"
+        carpeta_resultados.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archivo_salida = carpeta_resultados / f"Cotizaciones_Por_Moneda_Todos_{timestamp}.xlsx"
 
         print(f"\nGenerando archivo Excel de salida...")
-        with pd.ExcelWriter(archivo_salida, engine='openpyxl') as writer:
-            for moneda, datos_moneda in todas_monedas.items():
-                # Crear DataFrame para esta moneda
-                df_moneda = pd.DataFrame(datos_moneda)
+        wb_salida = openpyxl.Workbook()
+        # Eliminar la hoja por defecto
+        wb_salida.remove(wb_salida.active)
 
-                # Guardar en una hoja con el nombre de la moneda
-                nombre_hoja = moneda[:31]  # Excel limita nombres de hoja a 31 caracteres
-                df_moneda.to_excel(writer, sheet_name=nombre_hoja, index=False)
+        for moneda, datos_moneda in todas_monedas.items():
+            nombre_hoja = moneda[:31]
+            ws_salida = wb_salida.create_sheet(title=nombre_hoja)
 
-                print(f"  - {moneda}: {len(df_moneda)} registros guardados")
+            # Escribir encabezados
+            ws_salida.cell(row=1, column=1, value='Fecha')
+            ws_salida.cell(row=1, column=2, value='Compra')
+            ws_salida.cell(row=1, column=3, value='Venta')
+
+            # Escribir datos
+            for i, registro in enumerate(datos_moneda, start=2):
+                ws_salida.cell(row=i, column=1, value=registro['Fecha'])
+                ws_salida.cell(row=i, column=2, value=registro['Compra'])
+                ws_salida.cell(row=i, column=3, value=registro['Venta'])
+
+            # Insertar gráfico de línea
+            buf = generar_grafico(datos_moneda, moneda)
+            img = XlImage(buf)
+            ws_salida.add_image(img, 'E2')
+
+            print(f"  - {moneda}: {len(datos_moneda)} registros guardados")
+
+        wb_salida.save(archivo_salida)
+        wb_salida.close()
 
         print(f"\nArchivo generado exitosamente: {archivo_salida}")
 
@@ -202,6 +398,7 @@ def procesar_cotizaciones():
         import traceback
         traceback.print_exc()
         return
+
 
 if __name__ == "__main__":
     procesar_cotizaciones()
