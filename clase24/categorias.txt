@@ -1,0 +1,7 @@
+Comida
+Transporte
+Salud
+Ropa
+Entretenimiento
+Gastos Fijos
+Gastos Excepcional

@@ -1,0 +1,23 @@
+Spotify,Entretenimiento
+Uber,Transporte
+Starbucks,Comida
+Librería El Lector,Entretenimiento
+McDonald's,Comida
+Restaurante El Fogón,Comida
+Supermercado La Colonia,Comida
+Pago de Agua (ESSAP),Gastos Fijos
+Alquiler Apartamento,Gastos Fijos
+Farmacia del Pueblo,Salud
+Gasolinera Puma,Transporte
+Steam - Videojuegos,Entretenimiento
+Panadería Don Vito,Comida
+Estacionamiento Centro,Transporte
+Tienda de Ropa Zara,Ropa
+Netflix,Entretenimiento
+Pago de Luz (ANDE),Gastos Fijos
+Internet Tigo,Gastos Fijos
+Cine Multicenter,Entretenimiento
+Gimnasio SportLife,Salud
+Tienda Electrónica - TV Samsung,Gastos Excepcional
+Consulta Medica,Salud
+Biggie,Comida
